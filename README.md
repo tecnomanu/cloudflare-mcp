@@ -7,15 +7,18 @@ at any zone via env vars.
 ## Requirements
 
 - Node.js 18+
-- A Cloudflare API token with `Zone:DNS:Edit` (add `Zone:Read` to resolve the
-  zone by name instead of by id)
+- A Cloudflare API token. Permissions by feature:
+  - DNS tools → `Zone:DNS:Edit` (+ `Zone:Read` to resolve the zone by name)
+  - Tunnel tools → `Account:Cloudflare Tunnel:Edit` (+ `Account:Account
+    Settings:Read` to auto-resolve the account id)
 
 ## Configuration
 
 | Variable | Description |
 |----------|-------------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with `Zone:DNS:Edit` |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token (see permissions above) |
 | `CLOUDFLARE_ZONE_ID` | The 32-char hex Zone ID **or** the zone name (e.g. `example.com`). A name is resolved to its id at startup (needs `Zone:Read`). |
+| `CLOUDFLARE_ACCOUNT_ID` | Optional. Account id for tunnel tools. Auto-resolved from the token if omitted (needs `Account:Read`). |
 
 Copy `.env.example` to `.env` and fill it in. Never commit `.env`.
 
@@ -37,6 +40,21 @@ npm start       # node dist/index.js
 | `dns_create` | Create a record (type, name, content, proxied, ttl) |
 | `dns_update` | Update content/proxy of an existing record by name |
 | `dns_delete` | Delete a record by name |
+| `tunnel_list` | List cloudflared tunnels in the account |
+| `tunnel_create` | Create a remotely-managed tunnel (idempotent by name); returns its run token |
+| `tunnel_token` | Get the run token for an existing tunnel |
+| `tunnel_configure` | Set a tunnel's public-hostname ingress (hostname → local service) |
+| `tunnel_delete` | Delete a tunnel by name |
+
+### Stand up a tunnel end-to-end
+
+```
+tunnel_create   name=my-dev                                   → returns id + token
+tunnel_configure name=my-dev hostname=dev.example.com service=http://localhost:8770
+dns_create      type=CNAME name=dev.example.com content=<id>.cfargotunnel.com
+# then run it locally (no cert.pem needed):
+#   TUNNEL_TOKEN=<token> cloudflared tunnel run
+```
 
 ## Example (via an MCP client)
 
