@@ -61,22 +61,32 @@ async function resolveZoneId(zone: string): Promise<string> {
   return match.id;
 }
 
-/** Resolve the account id from env or from the token's single account. */
-async function resolveAccountId(): Promise<string | null> {
+/**
+ * Resolve the account id from env, else from the zone (needs only Zone:Read),
+ * else from the token's accounts list (needs Account:Read).
+ */
+async function resolveAccountId(zoneId: string): Promise<string | null> {
   if (ACCOUNT_ENV) return ACCOUNT_ENV;
+  try {
+    const zone = await cfFetch<{ account?: { id: string } }>(
+      `${API_ROOT}/zones/${zoneId}`
+    );
+    if (zone.account?.id) return zone.account.id;
+  } catch {
+    /* fall through */
+  }
   try {
     const accounts = await cfFetch<{ id: string; name: string }[]>(
       `${API_ROOT}/accounts?per_page=50`
     );
-    if (accounts.length === 1) return accounts[0].id;
-    return accounts[0]?.id ?? null; // best-effort: first account
+    return accounts[0]?.id ?? null;
   } catch {
     return null;
   }
 }
 
 const ZONE_ID = await resolveZoneId(ZONE);
-const ACCOUNT_ID = await resolveAccountId();
+const ACCOUNT_ID = await resolveAccountId(ZONE_ID);
 const BASE_URL = `${API_ROOT}/zones/${ZONE_ID}/dns_records`;
 
 async function dnsRequest<T>(path: string, method = "GET", body?: object): Promise<T> {
