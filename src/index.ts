@@ -286,7 +286,7 @@ server.registerTool(
     description:
       "Create a remotely-managed cloudflared tunnel and return its run token. Idempotent by name.",
     inputSchema: {
-      name: z.string().describe("Tunnel name, e.g. postbean-dev"),
+      name: z.string().describe("Tunnel name, e.g. my-dev"),
     },
   },
   async ({ name }) => {
