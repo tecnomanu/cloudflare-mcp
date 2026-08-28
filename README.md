@@ -1,8 +1,8 @@
 # cloudflare-mcp
 
-A tiny TypeScript [MCP](https://modelcontextprotocol.io) server to manage the DNS
-records of a Cloudflare zone through the Cloudflare API. Zone-agnostic: point it
-at any zone via env vars.
+A tiny TypeScript [MCP](https://modelcontextprotocol.io) server to manage a
+Cloudflare zone through the Cloudflare API: DNS records, cloudflared tunnels and
+Email Routing. Zone-agnostic: point it at any zone via env vars.
 
 ## Requirements
 
@@ -11,6 +11,9 @@ at any zone via env vars.
   - DNS tools → `Zone:DNS:Edit` (+ `Zone:Read` to resolve the zone by name)
   - Tunnel tools → `Account:Cloudflare Tunnel:Edit` (+ `Account:Account
     Settings:Read` to auto-resolve the account id)
+  - Email Routing rules → `Zone:Email Routing Rules:Edit` (`:Read` is enough for
+    the read-only tools)
+  - Email Routing destinations → `Account:Email Routing Addresses:Edit`
 
 ## Configuration
 
@@ -45,6 +48,11 @@ npm start       # node dist/index.js
 | `tunnel_token` | Get the run token for an existing tunnel |
 | `tunnel_configure` | Set a tunnel's public-hostname ingress (hostname → local service) |
 | `tunnel_delete` | Delete a tunnel by name |
+| `email_routing_status` | Whether Email Routing is enabled on the zone |
+| `email_rules_list` | List routing rules — which `@zone` addresses forward where, catch-all included |
+| `email_rule_create` | Forward an address on the zone to a verified destination |
+| `email_destinations_list` | List the account's destination addresses and whether each is verified |
+| `email_destination_add` | Add a destination address (Cloudflare emails it a verification link) |
 
 ### Stand up a tunnel end-to-end
 
@@ -55,6 +63,17 @@ dns_create      type=CNAME name=dev.example.com content=<id>.cfargotunnel.com
 # then run it locally (no cert.pem needed):
 #   TUNNEL_TOKEN=<token> cloudflared tunnel run
 ```
+
+### Forward an address end-to-end
+
+```
+email_destination_add   email=you@gmail.com        → verification link sent (click it)
+email_rule_create       address=hello destination=you@gmail.com
+email_rules_list                                   → confirm hello@example.com → you@gmail.com
+```
+
+A destination must be verified before a rule can forward to it, and the zone
+needs Email Routing enabled (the dashboard wizard adds the MX/SPF/DKIM records).
 
 ## Example (via an MCP client)
 

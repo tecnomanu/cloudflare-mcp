@@ -388,5 +388,169 @@ server.registerTool(
   }
 );
 
+// ─────────────────────────── Email Routing ──────────────────────────
+
+type EmailRule = {
+  id: string;
+  tag: string;
+  name: string;
+  enabled: boolean;
+  matchers: { type: string; field?: string; value?: string }[];
+  actions: { type: string; value?: string[] }[];
+};
+
+type EmailDestination = {
+  email: string;
+  verified: string | null;
+  created: string;
+};
+
+function emailZoneBase(): string {
+  return `${API_ROOT}/zones/${ZONE_ID}/email/routing`;
+}
+
+function emailAccountBase(): string {
+  if (!ACCOUNT_ID) {
+    throw new Error(
+      "No account id available. Set CLOUDFLARE_ACCOUNT_ID, or grant the token Account:Read so it can be resolved."
+    );
+  }
+  return `${API_ROOT}/accounts/${ACCOUNT_ID}/email/routing`;
+}
+
+function describeRule(r: EmailRule): string {
+  const from = r.matchers
+    .map((m) => (m.type === "all" ? "(catch-all)" : m.value ?? m.type))
+    .join(", ");
+  const to = r.actions
+    .map((a) => `${a.type}:${(a.value ?? []).join("|") || "-"}`)
+    .join(", ");
+  return `${r.enabled ? "on " : "off"} ${from.padEnd(34)} → ${to}`;
+}
+
+server.registerTool(
+  "email_routing_status",
+  {
+    description:
+      "Show whether Cloudflare Email Routing is enabled on the zone (needs Email Routing Rules:Read)",
+    inputSchema: {},
+  },
+  async () => {
+    const status = await cfFetch<{
+      enabled: boolean;
+      name: string;
+      status: string;
+      skip_wizard?: boolean;
+    }>(emailZoneBase());
+    return {
+      content: [
+        {
+          type: "text",
+          text: `zone: ${status.name}\nenabled: ${status.enabled}\nstatus: ${status.status}`,
+        },
+      ],
+    };
+  }
+);
+
+server.registerTool(
+  "email_rules_list",
+  {
+    description:
+      "List Email Routing rules (which @zone addresses forward where), including the catch-all",
+    inputSchema: {},
+  },
+  async () => {
+    const rules = await cfFetch<EmailRule[]>(`${emailZoneBase()}/rules?per_page=50`);
+    const lines = rules.map(describeRule);
+    try {
+      const catchAll = await cfFetch<EmailRule>(`${emailZoneBase()}/rules/catch_all`);
+      lines.push(describeRule(catchAll));
+    } catch {
+      /* catch-all unreadable or unset */
+    }
+    return {
+      content: [{ type: "text", text: lines.join("\n") || "No routing rules." }],
+    };
+  }
+);
+
+server.registerTool(
+  "email_destinations_list",
+  {
+    description:
+      "List the account's destination addresses for Email Routing and whether each is verified (needs Email Routing Addresses:Read)",
+    inputSchema: {},
+  },
+  async () => {
+    const addresses = await cfFetch<EmailDestination[]>(
+      `${emailAccountBase()}/addresses?per_page=50`
+    );
+    const lines = addresses.map(
+      (a) => `${a.verified ? "verified  " : "UNVERIFIED"} ${a.email}`
+    );
+    return {
+      content: [
+        { type: "text", text: lines.join("\n") || "No destination addresses." },
+      ],
+    };
+  }
+);
+
+server.registerTool(
+  "email_rule_create",
+  {
+    description:
+      "Forward an address on this zone to a destination address. The destination must already be verified in Cloudflare.",
+    inputSchema: {
+      address: z
+        .string()
+        .describe("Local part or full address, e.g. 'hola' or 'hola@example.com'"),
+      destination: z
+        .string()
+        .describe("Verified destination address to forward to"),
+    },
+  },
+  async ({ address, destination }) => {
+    const zoneName = await cfFetch<{ name: string }>(`${API_ROOT}/zones/${ZONE_ID}`);
+    const from = address.includes("@") ? address : `${address}@${zoneName.name}`;
+    const rule = await cfFetch<EmailRule>(`${emailZoneBase()}/rules`, "POST", {
+      name: `forward ${from}`,
+      enabled: true,
+      matchers: [{ type: "literal", field: "to", value: from }],
+      actions: [{ type: "forward", value: [destination] }],
+    });
+    return {
+      content: [{ type: "text", text: `✓ ${from} → ${destination} (${rule.tag})` }],
+    };
+  }
+);
+
+server.registerTool(
+  "email_destination_add",
+  {
+    description:
+      "Add a destination address for Email Routing. Cloudflare emails it a verification link that the owner must click before it can receive forwards.",
+    inputSchema: {
+      email: z.string().describe("Destination address, e.g. you@gmail.com"),
+    },
+  },
+  async ({ email }) => {
+    const created = await cfFetch<EmailDestination>(
+      `${emailAccountBase()}/addresses`,
+      "POST",
+      { email }
+    );
+    return {
+      content: [
+        {
+          type: "text",
+          text: `✓ ${created.email} added — ${created.verified ? "already verified" : "verification email sent, click the link to confirm"}`,
+        },
+      ],
+    };
+  }
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
