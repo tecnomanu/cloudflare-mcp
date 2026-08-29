@@ -25,7 +25,7 @@ const headers = {
 type CfEnvelope<T> = {
   success: boolean;
   result: T;
-  errors: { message: string }[];
+  errors: { code?: number; message: string }[];
 };
 
 async function cfFetch<T>(url: string, method = "GET", body?: object): Promise<T> {
@@ -37,7 +37,9 @@ async function cfFetch<T>(url: string, method = "GET", body?: object): Promise<T
   const data = (await res.json()) as CfEnvelope<T>;
   if (!data.success) {
     throw new Error(
-      (data.errors ?? []).map((e) => e.message).join(", ") || res.statusText
+      (data.errors ?? [])
+        .map((e) => (e.code ? `${e.message} (code ${e.code})` : e.message))
+        .join(", ") || res.statusText
     );
   }
   return data.result;
@@ -464,8 +466,10 @@ server.registerTool(
     const rules = await cfFetch<EmailRule[]>(`${emailZoneBase()}/rules?per_page=50`);
     const lines = rules.map(describeRule);
     try {
+      // The rules finder already returns the catch-all on some zones; only
+      // append the dedicated fetch when it is not in the list already.
       const catchAll = await cfFetch<EmailRule>(`${emailZoneBase()}/rules/catch_all`);
-      lines.push(describeRule(catchAll));
+      if (!rules.some((r) => r.id === catchAll.id)) lines.push(describeRule(catchAll));
     } catch {
       /* catch-all unreadable or unset */
     }
